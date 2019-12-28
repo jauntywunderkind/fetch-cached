@@ -1,0 +1,23 @@
+{
+	"name": "fetch-cached",
+	"version": "1.0.0",
+	"description": "",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://archive.eldergods.com/fetch-cached"
+	},
+	"keywords": [],
+	"author": "jauntywunderkind",
+	"license": "MIT",
+	"module": "fetch-cached.js",
+	"esm": true,
+	"dependencies": {
+		"fetch-h2": "^2.2.2",
+		"xdg-basedir": "^4.0.0"
+	},
+	"type": "module"
+}
