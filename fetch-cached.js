@@ -50,7 +50,7 @@ export function cachePath( opts, url= urlize( opts)){
 }
 
 
-async function instrumentFetch( f, ctx){
+function instrumentFetch( f, ctx){
 	const saved= { text: f.text, json: f.json, arrayBuffer: f.arrayBuffer}
 	f.text= async function(){
 		const text= await saved.text.call( f)
@@ -79,9 +79,26 @@ export async function fetchCached( opts= {}){
 		url= urlize( opts),
 		filename= cachePath( opts, url)
 	try{
-		const file= await readFile( filename)
-		return file
-	}catch( ex){}
+		const
+			file= await readFile( filename),
+			shim= {
+				status: 200,
+				text(){
+					const text= file.toString( "utf8")
+					return text
+				},
+				json(){
+					const text= file.toString( "utf8")
+					return JSON.stringify( text)
+				},
+				arrayBuffer(){
+					return file
+				}
+			}
+		return shim
+	}catch( ex){
+		console.log("nope", ex)
+	}
 
 	// try to make basedir
 	const
@@ -98,13 +115,14 @@ export async function fetchCached( opts= {}){
 	if( !opts.fileMode&& execBits){
 		fileMode-= execBits
 	}
+	console.log("OPEN")
 	const fd= await open( filename, "w", fileMode)
 	// we now should have a file we can write to
 
 	// fetch
 	let ctx= {
 		closing: null,
-		close: async function(){
+		close: async function( truncate){
 			console.log("CLOSE")
 			if( this.closing){
 				return this.closing
@@ -115,13 +133,16 @@ export async function fetchCached( opts= {}){
 				rej_= rej
 			})
 			try{
-				console.log("FD CLOSE")
+				console.log("FD CLOSE", fd.fd)
 				await this.fd.close()
-				await truncate( this.filename)
+				if( truncate){
+					await truncate( this.filename)
+				}
 			}catch(ex){
 				rej_( ex)
 			}
 			res_()
+			return this.closing
 		},
 		fd,
 		filename
@@ -131,16 +152,12 @@ export async function fetchCached( opts= {}){
 		if( f.status>= 300){
 			throw new Error( "unexpected response")
 		}
-		return await instrumentFetch( f, ctx)
+		console.log("got-fetch")
+		return instrumentFetch( f, ctx)
 	}catch(ex){
 		console.log("CATCH-CLOSE")
-		ctx.close()
+		ctx.close( true)
 		throw ex
-	}finally{
-		if( !ctx.closing){
-			console.log("FINAL-CLOSING")
-			await fd.close()
-		}
 	}
 }
 export default fetchCached
@@ -150,7 +167,6 @@ export async function main( opts){
 		const
 			f= await fetchCached( opts),
 			text= await f.text()
-		console.log( text)
 	}catch(ex){
 		console.error( ex)
 		process.exit( 1)
