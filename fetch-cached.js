@@ -85,6 +85,7 @@ export async function fetchCached( opts= {}){
 			throw new Error( "unexpected response")
 		}
 		const buf= await f.arrayBuffer()
+		buf.url= url
 		return buf
 	}catch(ex){
 		console.log("CATCH")
