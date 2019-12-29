@@ -49,6 +49,30 @@ export function cachePath( opts, url= urlize( opts)){
 	return filename
 }
 
+
+async function instrumentFetch( f, ctx){
+	const saved= { text: f.text, json: f.json, arrayBuffer: f.arrayBuffer}
+	f.text= async function(){
+		const text= await saved.text.call( f)
+		ctx.fd.write( text, "utf8")
+		ctx.close()
+		return text
+	}
+	f.json= async function(){
+		const text= await saved.text.call( f)
+		ctx.fd.write( text, "utf8")
+		ctx.close()
+		return JSON.stringify( text)
+	}
+	f.arrayBuffer= async function(){
+		const arrayBuffer= await saved.arrayBuffer.call( f)
+		ctx.fd.write( arrayBuffer)
+		ctx.close()
+		return arrayBuffer
+	}
+	return f
+}
+
 export async function fetchCached( opts= {}){
 	// try to read file
 	const
@@ -78,23 +102,43 @@ export async function fetchCached( opts= {}){
 	// we now should have a file we can write to
 
 	// fetch
-	let closing= false
+	let ctx= {
+		closing: null,
+		close: async function(){
+			console.log("CLOSE")
+			if( this.closing){
+				return this.closing
+			}
+			let res_, rej_
+			this.closing= new Promise(function(res, rej){
+				res_= res
+				rej_= rej
+			})
+			try{
+				console.log("FD CLOSE")
+				await this.fd.close()
+				await truncate( this.filename)
+			}catch(ex){
+				rej_( ex)
+			}
+			res_()
+		},
+		fd,
+		filename
+	}
 	try{
 		const f= await fetch( url.href, opts)
 		if( f.status>= 300){
 			throw new Error( "unexpected response")
 		}
-		const buf= await f.arrayBuffer()
-		buf.url= url
-		return buf
+		return await instrumentFetch( f, ctx)
 	}catch(ex){
-		console.log("CATCH")
-		closing= true
-		await fd.close()
-		await truncate( filename)
+		console.log("CATCH-CLOSE")
+		ctx.close()
 		throw ex
 	}finally{
-		if( !closing){
+		if( !ctx.closing){
+			console.log("FINAL-CLOSING")
 			await fd.close()
 		}
 	}
@@ -104,8 +148,8 @@ export default fetchCached
 export async function main( opts){
 	try{
 		const
-			buf= await fetchCached( opts),
-			text= Buffer.from( buf).toString( "utf8")
+			f= await fetchCached( opts),
+			text= await f.text()
 		console.log( text)
 	}catch(ex){
 		console.error( ex)
